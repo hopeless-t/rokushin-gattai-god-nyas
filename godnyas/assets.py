@@ -8,6 +8,7 @@ from __future__ import annotations
 import hashlib
 import importlib.util
 import os
+import sys
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -93,5 +94,10 @@ def load_default_0b(
     if spec is None or spec.loader is None:
         raise AssetUnavailable("Unable to load installed default 0B asset.")
     module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    sys.modules[spec.name] = module
+    try:
+        spec.loader.exec_module(module)
+    except Exception:
+        sys.modules.pop(spec.name, None)
+        raise
     return module.load_default_0b(memory_path=memory_path)
