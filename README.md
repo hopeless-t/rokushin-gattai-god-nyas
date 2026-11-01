@@ -38,7 +38,7 @@ python -m unittest discover -s tests -v
 
 ### 公式default 0B初期アセット
 
-公式の0Bスターターは**本体とは別配布**です。初回だけ取得し、その後はローカルコピーを使えます。
+公式の0Bスターターは**本体とは別配布**です。初回だけ取得し、その後はローカルコピーを使えます。現在の公開アセットは v0.2 で、旧reference toyではなく、計画・再計画・記憶・推論・知覚・検証・探索・ルーティング・allowlist tool/workflow を持つ実働版です。
 
 ```bash
 python examples/default_0b_demo.py "ベンチ回して"
@@ -49,9 +49,13 @@ python examples/default_0b_demo.py "ベンチ回して"
 ```python
 from godnyas import load_default_0b
 
-model = load_default_0b()  # 未取得なら公式配布元から一度だけ取得
+model = load_default_0b()  # 未取得/旧版なら公式配布元からv0.2を取得
+print(model.self_test())
 print(model.respond("ベンチ回して"))
+print(model.reason("arithmetic", {"expr": "(12 + 5) * 3"}))
 ```
+
+**0Bは「Pythonではない」という意味ではありません。実装言語はPythonで、0Bは宣言された経路で `trainable_parameters=0` / `model_calls=0` を意味します。** 対応範囲外は `UNRESOLVED` を返します。
 
 公式0Bアセットには**別ライセンス**が適用されます。再配布・ミラーは禁止です。公式配布が終了した場合、新規取得は終了しますが、既に正規取得したローカルコピーはそのライセンスの範囲で使い続けられます。
 
@@ -108,7 +112,7 @@ python -m unittest discover -s tests -v
 
 ### Official default 0B starter asset
 
-The official 0B starter is **distributed separately**. It is fetched once and then used from the local copy.
+The official 0B starter is **distributed separately**. It is fetched once and then used from the local copy. The current v0.2 asset is a usable multi-capability build with planning/replanning, memory, reasoning, perception, verification, discovery, routing, allowlisted tools, and checkpointed workflows—not the old reference toy.
 
 ```bash
 python examples/default_0b_demo.py "benchmark"
@@ -119,9 +123,13 @@ Or:
 ```python
 from godnyas import load_default_0b
 
-model = load_default_0b()  # fetches once from the official distribution point
+model = load_default_0b()  # fetches/upgrades to v0.2 from the official distribution point
+print(model.self_test())
 print(model.respond("benchmark"))
+print(model.reason("arithmetic", {"expr": "(12 + 5) * 3"}))
 ```
+
+**0B does not mean “not Python.” Python is the implementation language; 0B means the declared paths run with `trainable_parameters=0` and `model_calls=0`.** Unsupported semantics return `UNRESOLVED`.
 
 The official 0B asset has a **separate license**. Redistribution and mirroring are not permitted. If official distribution ends, new acquisition ends; lawfully obtained local copies may continue to be used under that asset license.
 

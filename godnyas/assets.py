@@ -7,23 +7,23 @@ from __future__ import annotations
 
 import hashlib
 import importlib.util
+import io
 import os
+import shutil
 import sys
 import tempfile
+import zipfile
 from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
+ASSET_VERSION = "0.2.0"
 ASSET_URL = (
     "https://raw.githubusercontent.com/hopeless-t/god-nyas-default-0b/"
-    "main/godnyas_default_0b/model.py"
+    "main/dist/god-nyas-default-0b-v0.2.0.zip"
 )
-ASSET_LICENSE_URL = (
-    "https://raw.githubusercontent.com/hopeless-t/god-nyas-default-0b/"
-    "main/ASSET_LICENSE.txt"
-)
-ASSET_SHA256 = "985f13236606d0985a361d608017833ea1dd74b5495a3604024016783c8b1a00"
+ASSET_SHA256 = "fb31b201415ffef756e97420226fa1d85ed7a58f91067e2d8e37229dff872531"
 
 
 class AssetUnavailable(RuntimeError):
@@ -38,9 +38,9 @@ def default_asset_dir() -> Path:
 
 
 def _download(url: str) -> bytes:
-    req = Request(url, headers={"User-Agent": "rokushin-gattai-god-nyas/0.1"})
+    req = Request(url, headers={"User-Agent": "rokushin-gattai-god-nyas/0.2"})
     try:
-        with urlopen(req, timeout=15) as response:
+        with urlopen(req, timeout=20) as response:
             return response.read()
     except (HTTPError, URLError, TimeoutError) as exc:
         raise AssetUnavailable(
@@ -57,21 +57,39 @@ def _verify(payload: bytes) -> None:
         )
 
 
-def install_default_0b(destination: str | Path | None = None) -> Path:
-    """Fetch the optional official starter asset and its separate license."""
-    dest = Path(destination).expanduser() if destination else default_asset_dir()
-    dest.mkdir(parents=True, exist_ok=True)
+def _safe_extract(payload: bytes, target: Path) -> None:
+    with zipfile.ZipFile(io.BytesIO(payload)) as archive:
+        for member in archive.infolist():
+            out = (target / member.filename).resolve()
+            if target.resolve() not in out.parents and out != target.resolve():
+                raise AssetUnavailable("Default 0B asset contains an unsafe archive path.")
+        archive.extractall(target)
 
+
+def install_default_0b(destination: str | Path | None = None) -> Path:
+    """Fetch and install the optional official 0B starter bundle."""
+    dest = Path(destination).expanduser() if destination else default_asset_dir()
     payload = _download(ASSET_URL)
     _verify(payload)
-    license_payload = _download(ASSET_LICENSE_URL)
 
-    with tempfile.NamedTemporaryFile(dir=dest, delete=False) as tmp:
-        tmp.write(payload)
-        tmp_path = Path(tmp.name)
-    tmp_path.replace(dest / "model.py")
-    (dest / "ASSET_LICENSE.txt").write_bytes(license_payload)
-    return dest / "model.py"
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    stage = Path(tempfile.mkdtemp(prefix="godnyas-0b-", dir=dest.parent))
+    try:
+        _safe_extract(payload, stage)
+        package_init = stage / "godnyas_default_0b" / "__init__.py"
+        license_file = stage / "ASSET_LICENSE.txt"
+        if not package_init.is_file() or not license_file.is_file():
+            raise AssetUnavailable("Default 0B bundle is missing required files.")
+        (stage / ".bundle.sha256").write_text(ASSET_SHA256 + "\n")
+        (stage / ".bundle.version").write_text(ASSET_VERSION + "\n")
+        if dest.exists():
+            shutil.rmtree(dest)
+        stage.replace(dest)
+    except Exception:
+        if stage.exists():
+            shutil.rmtree(stage, ignore_errors=True)
+        raise
+    return dest / "godnyas_default_0b" / "__init__.py"
 
 
 def load_default_0b(
@@ -80,24 +98,34 @@ def load_default_0b(
     auto_install: bool = True,
     asset_dir: str | Path | None = None,
 ) -> Any:
-    """Load the optional official 0B asset, fetching it once when requested."""
+    """Load the optional official 0B asset, fetching/upgrading it when needed."""
     dest = Path(asset_dir).expanduser() if asset_dir else default_asset_dir()
-    model_path = dest / "model.py"
-    if not model_path.exists():
+    package_init = dest / "godnyas_default_0b" / "__init__.py"
+    version_file = dest / ".bundle.version"
+    installed_version = version_file.read_text().strip() if version_file.exists() else None
+    if not package_init.exists() or installed_version != ASSET_VERSION:
         if not auto_install:
-            raise AssetUnavailable("Default 0B asset is not installed.")
-        model_path = install_default_0b(dest)
+            raise AssetUnavailable(f"Default 0B asset v{ASSET_VERSION} is not installed.")
+        package_init = install_default_0b(dest)
 
-    payload = model_path.read_bytes()
-    _verify(payload)
-    spec = importlib.util.spec_from_file_location("godnyas_optional_default_0b", model_path)
+    package_name = "godnyas_optional_default_0b"
+    for name in list(sys.modules):
+        if name == package_name or name.startswith(package_name + "."):
+            sys.modules.pop(name, None)
+    spec = importlib.util.spec_from_file_location(
+        package_name,
+        package_init,
+        submodule_search_locations=[str(package_init.parent)],
+    )
     if spec is None or spec.loader is None:
         raise AssetUnavailable("Unable to load installed default 0B asset.")
     module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
+    sys.modules[package_name] = module
     try:
         spec.loader.exec_module(module)
     except Exception:
-        sys.modules.pop(spec.name, None)
+        for name in list(sys.modules):
+            if name == package_name or name.startswith(package_name + "."):
+                sys.modules.pop(name, None)
         raise
     return module.load_default_0b(memory_path=memory_path)
